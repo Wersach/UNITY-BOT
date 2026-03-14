@@ -15,7 +15,7 @@ from telegram.constants import ParseMode
 import config
 import database as db
 from github_parser import search_unity_repos
-from ai_generator import generate_post
+from ai_generator import generate_post, is_game
 
 logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
@@ -48,30 +48,59 @@ def approval_keyboard(repo_id: int) -> InlineKeyboardMarkup:
 # ============================================================
 
 async def send_to_admin(app: Application, repo_id: int, repo: dict, post_text: str):
-    itch_line = f"\n🕹 itch.io: {repo['itch_url']}" if repo.get("itch_url") else ""
-    header = (
+    itch_line = f"\n🕹 <b>itch.io:</b> {repo['itch_url']}" if repo.get("itch_url") else ""
+    # Сообщение 1: информация о репозитории
+    info = (
         f"🔔 <b>Новый репозиторий на модерации</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"📦 <b>Репо:</b> {repo['repo_name']}\n"
         f"⭐ <b>Звёзды:</b> {repo['stars']}\n"
         f"📅 <b>Создан:</b> {repo['created_at']}\n"
         f"🔗 <b>Ссылка:</b> {repo['url']}{itch_line}\n"
-        f"━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"<b>Сгенерированный пост:</b>\n\n"
-        f"{post_text}"
+        f"━━━━━━━━━━━━━━━━━━━━"
     )
+    await app.bot.send_message(
+        chat_id=config.ADMIN_ID,
+        text=info,
+        parse_mode=ParseMode.HTML,
+        disable_web_page_preview=True,
+    )
+    header = post_text
 
-    # Пробуем отправить с превью-картинкой
-    try:
-        msg = await app.bot.send_photo(
-            chat_id=config.ADMIN_ID,
-            photo=repo.get("image_url", ""),
-            caption=header,
-            parse_mode=ParseMode.HTML,
-            reply_markup=approval_keyboard(repo_id),
-        )
-    except Exception:
-        # Если картинка не загрузилась — отправляем текстом
+    screenshots = repo.get("screenshots", [])
+    if screenshots:
+        try:
+            from telegram import InputMediaPhoto
+            if len(screenshots) == 1:
+                msg = await app.bot.send_photo(
+                    chat_id=config.ADMIN_ID,
+                    photo=screenshots[0],
+                    caption=header,
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=approval_keyboard(repo_id),
+                )
+            else:
+                # Отправляем альбом — первое фото с caption
+                media = [InputMediaPhoto(media=screenshots[0], caption=header, parse_mode=ParseMode.HTML)]
+                for url in screenshots[1:]:
+                    media.append(InputMediaPhoto(media=url))
+                await app.bot.send_media_group(chat_id=config.ADMIN_ID, media=media)
+                # Кнопки отдельным сообщением
+                msg = await app.bot.send_message(
+                    chat_id=config.ADMIN_ID,
+                    text="👆 Выберите действие:",
+                    reply_markup=approval_keyboard(repo_id),
+                )
+        except Exception as e:
+            logger.warning(f"Не удалось отправить фото: {e}")
+            msg = await app.bot.send_message(
+                chat_id=config.ADMIN_ID,
+                text=header,
+                parse_mode=ParseMode.HTML,
+                reply_markup=approval_keyboard(repo_id),
+                disable_web_page_preview=True,
+            )
+    else:
         msg = await app.bot.send_message(
             chat_id=config.ADMIN_ID,
             text=header,
@@ -96,6 +125,12 @@ async def check_repos(context: ContextTypes.DEFAULT_TYPE, reply_to=None):
 
     for repo in repos:
         if db.is_seen(repo["url"]):
+            continue
+
+        if not is_game(repo):
+            logger.info(f"[FILTER] Не игра, пропускаем: {repo['repo_name']}")
+            db.add_repo(repo["url"], repo["repo_name"], "skipped")
+            db.update_status(db._get_id_by_url(repo["url"]), "rejected")
             continue
 
         post_text = generate_post(repo)

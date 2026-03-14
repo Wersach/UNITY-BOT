@@ -48,7 +48,7 @@ def search_unity_repos() -> list[dict]:
     page = random.randint(1, total_pages)
 
     query = (
-        f"topic:unity stars:{GITHUB_MIN_STARS}..{GITHUB_MAX_STARS} "
+        f"topic:unity topic:game stars:{GITHUB_MIN_STARS}..{GITHUB_MAX_STARS} "
         f"created:>{GITHUB_MIN_YEAR}-01-01 language:C#"
     )
 
@@ -78,6 +78,8 @@ def search_unity_repos() -> list[dict]:
 
         created = item.get("created_at", "")[:10]
 
+        screenshots = _find_screenshots(readme, owner, repo, max_count=5)
+
         results.append({
             "url": item["html_url"],
             "repo_name": f"{owner}/{repo}",
@@ -87,7 +89,7 @@ def search_unity_repos() -> list[dict]:
             "created_at": created,
             "readme": readme,
             "itch_url": itch_url,
-            "image_url": f"https://opengraph.githubassets.com/1/{owner}/{repo}",
+            "screenshots": screenshots,
         })
 
     logger.info(f"[GitHub] Найдено репозиториев: {len(results)} (страница {page})")

@@ -99,3 +99,11 @@ def get_stats() -> dict:
             cur.execute("SELECT COUNT(*) FROM seen_repos WHERE status='rejected'")
             rejected = cur.fetchone()[0]
     return {"total": total, "published": published, "pending": pending, "rejected": rejected}
+
+
+def _get_id_by_url(repo_url: str) -> int | None:
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM seen_repos WHERE repo_url = %s", (repo_url,))
+            row = cur.fetchone()
+            return row[0] if row else None

@@ -135,17 +135,13 @@ async def check_repos(context: ContextTypes.DEFAULT_TYPE, reply_to=None):
 
         post_text = generate_post(repo)
 
-        # Добавляем подпись
-        signature = f"\n\n⬇️ <a href='{config.CHANNEL_LINK}'><b>{config.CHANNEL_NAME}</b></a>"
-        post_text_with_sig = post_text + signature
-
         repo_id = db.add_repo(
             repo_url=repo["url"],
             repo_name=repo["repo_name"],
-            generated_text=post_text_with_sig,
+            generated_text=post_text,
         )
 
-        await send_to_admin(context.application, repo_id, repo, post_text_with_sig)
+        await send_to_admin(context.application, repo_id, repo, post_text)
         new_count += 1
 
         # Один новый репозиторий за цикл — не спамим

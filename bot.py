@@ -139,6 +139,7 @@ async def check_repos(context: ContextTypes.DEFAULT_TYPE, reply_to=None):
             repo_url=repo["url"],
             repo_name=repo["repo_name"],
             generated_text=post_text,
+            screenshots=repo.get("screenshots", []),
         )
 
         await send_to_admin(context.application, repo_id, repo, post_text)
@@ -248,13 +249,39 @@ async def handle_edit_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def publish_repo(context: ContextTypes.DEFAULT_TYPE, repo_id: int, repo: dict):
     post_text = repo["generated_text"]
+    screenshots_str = repo.get("screenshots", "")
+    screenshots = [s for s in screenshots_str.split("|||") if s] if screenshots_str else []
 
-    await context.bot.send_message(
-        chat_id=config.CHANNEL_ID,
-        text=post_text,
-        parse_mode=ParseMode.HTML,
-        disable_web_page_preview=False,
-    )
+    if screenshots:
+        try:
+            from telegram import InputMediaPhoto
+            if len(screenshots) == 1:
+                await context.bot.send_photo(
+                    chat_id=config.CHANNEL_ID,
+                    photo=screenshots[0],
+                    caption=post_text,
+                    parse_mode=ParseMode.HTML,
+                )
+            else:
+                media = [InputMediaPhoto(media=screenshots[0], caption=post_text, parse_mode=ParseMode.HTML)]
+                for url in screenshots[1:]:
+                    media.append(InputMediaPhoto(media=url))
+                await context.bot.send_media_group(chat_id=config.CHANNEL_ID, media=media)
+        except Exception as e:
+            logger.warning(f"Не удалось отправить фото при публикации: {e}")
+            await context.bot.send_message(
+                chat_id=config.CHANNEL_ID,
+                text=post_text,
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=False,
+            )
+    else:
+        await context.bot.send_message(
+            chat_id=config.CHANNEL_ID,
+            text=post_text,
+            parse_mode=ParseMode.HTML,
+            disable_web_page_preview=False,
+        )
     db.update_status(repo_id, "published")
     logger.info(f"📢 Репозиторий #{repo_id} опубликован в {config.CHANNEL_ID}")
 

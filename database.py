@@ -18,6 +18,7 @@ def init_db():
                     id SERIAL PRIMARY KEY,
                     repo_url TEXT UNIQUE NOT NULL,
                     repo_name TEXT,
+                    screenshots TEXT DEFAULT '',
                     source_name TEXT DEFAULT 'GitHub',
                     generated_text TEXT,
                     status TEXT DEFAULT 'pending',
@@ -41,13 +42,14 @@ def is_seen(repo_url: str) -> bool:
             return cur.fetchone() is not None
 
 
-def add_repo(repo_url: str, repo_name: str, generated_text: str) -> int:
+def add_repo(repo_url: str, repo_name: str, generated_text: str, screenshots: list = None) -> int:
+    screenshots_str = "|||".join(screenshots) if screenshots else ""
     with _conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                """INSERT INTO seen_repos (repo_url, repo_name, generated_text, status)
-                   VALUES (%s, %s, %s, 'pending') RETURNING id""",
-                (repo_url, repo_name, generated_text),
+                """INSERT INTO seen_repos (repo_url, repo_name, generated_text, screenshots, status)
+                   VALUES (%s, %s, %s, %s, 'pending') RETURNING id""",
+                (repo_url, repo_name, generated_text, screenshots_str),
             )
             repo_id = cur.fetchone()[0]
         conn.commit()

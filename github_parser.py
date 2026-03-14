@@ -1,7 +1,8 @@
+import re
 import random
 import logging
 import requests
-from datetime import datetime, timezone
+import base64
 from config import GITHUB_TOKEN, GITHUB_MIN_STARS, GITHUB_MAX_STARS, GITHUB_MIN_YEAR
 
 logger = logging.getLogger(__name__)
@@ -11,7 +12,7 @@ if GITHUB_TOKEN:
     HEADERS["Authorization"] = f"Bearer {GITHUB_TOKEN}"
 
 
-def _get(url: str, params: dict = None) -> dict | None:
+def _get(url, params=None):
     try:
         resp = requests.get(url, headers=HEADERS, params=params, timeout=15)
         resp.raise_for_status()
@@ -21,31 +22,59 @@ def _get(url: str, params: dict = None) -> dict | None:
         return None
 
 
-def _get_readme(owner: str, repo: str) -> str:
+def _get_readme(owner, repo):
     data = _get(f"https://api.github.com/repos/{owner}/{repo}/readme")
     if not data:
         return ""
-    import base64
     try:
         content = data.get("content", "")
-        decoded = base64.b64decode(content).decode("utf-8", errors="ignore")
-        return decoded[:2000]
+        return base64.b64decode(content).decode("utf-8", errors="ignore")
     except Exception:
         return ""
 
 
-def _find_itch_url(readme: str) -> str:
-    import re
+def _find_itch_url(readme):
     m = re.search(r"https?://[a-z0-9\-]+\.itch\.io/[^\s\)\"']+", readme, re.IGNORECASE)
     return m.group(0) if m else ""
 
 
-def search_unity_repos() -> list[dict]:
-    results = []
+def _find_screenshots(readme, owner, repo, max_count=5):
+    found = []
+    seen = set()
+    skip = ["badge", "shield", "icon", "logo", "travis", "codecov", "appveyor", "workflow", "license"]
 
-    # Случайная страница чтобы каждый раз разные репозитории
-    total_pages = 10
-    page = random.randint(1, total_pages)
+    for m in re.finditer(r"!\[[^\]]*\]\(([^)\s]+\.(?:png|jpg|jpeg|gif|webp))[^)]*\)", readme, re.IGNORECASE):
+        path = m.group(1).strip()
+        if not path.startswith("http"):
+            path = f"https://raw.githubusercontent.com/{owner}/{repo}/HEAD/{path.lstrip('./')}"
+        if path not in seen and not any(s in path.lower() for s in skip):
+            found.append(path)
+            seen.add(path)
+        if len(found) >= max_count:
+            return found
+
+    for m in re.finditer(r"https://(?:user-images\.githubusercontent\.com|raw\.githubusercontent\.com)/\S+", readme, re.IGNORECASE):
+        url = m.group(0).rstrip(".,)\"'")
+        if url not in seen and not any(s in url.lower() for s in skip):
+            found.append(url)
+            seen.add(url)
+        if len(found) >= max_count:
+            return found
+
+    for m in re.finditer(r"https?://\S+\.(?:png|jpg|jpeg|gif|webp)", readme, re.IGNORECASE):
+        url = m.group(0).rstrip(".,)\"'")
+        if url not in seen and not any(s in url.lower() for s in skip):
+            found.append(url)
+            seen.add(url)
+        if len(found) >= max_count:
+            return found
+
+    return found
+
+
+def search_unity_repos():
+    results = []
+    page = random.randint(1, 10)
 
     query = (
         f"topic:unity topic:game stars:{GITHUB_MIN_STARS}..{GITHUB_MAX_STARS} "
@@ -75,10 +104,8 @@ def search_unity_repos() -> list[dict]:
         repo = item["name"]
         readme = _get_readme(owner, repo)
         itch_url = _find_itch_url(readme)
-
-        created = item.get("created_at", "")[:10]
-
         screenshots = _find_screenshots(readme, owner, repo, max_count=5)
+        created = item.get("created_at", "")[:10]
 
         results.append({
             "url": item["html_url"],

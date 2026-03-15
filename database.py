@@ -26,6 +26,9 @@ def init_db():
                 )
             """)
             cur.execute("""
+                ALTER TABLE seen_repos ADD COLUMN IF NOT EXISTS screenshots TEXT DEFAULT ''
+            """)
+            cur.execute("""
                 CREATE TABLE IF NOT EXISTS pending_messages (
                     repo_id INTEGER PRIMARY KEY,
                     message_id INTEGER

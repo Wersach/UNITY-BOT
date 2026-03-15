@@ -28,6 +28,23 @@ def init_db():
             cur.execute("""
                 ALTER TABLE seen_repos ADD COLUMN IF NOT EXISTS screenshots TEXT DEFAULT ''
             """)
+            # Migrate pending_messages if needed
+            cur.execute("""
+                DO $$ BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns
+                        WHERE table_name='pending_messages' AND column_name='repo_id'
+                    ) THEN
+                        DROP TABLE IF EXISTS pending_messages;
+                    END IF;
+                END $$
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS pending_messages (
+                    repo_id INTEGER PRIMARY KEY,
+                    message_id INTEGER
+                )
+            """)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS pending_messages (
                     repo_id INTEGER PRIMARY KEY,

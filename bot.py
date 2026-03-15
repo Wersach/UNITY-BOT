@@ -68,29 +68,45 @@ async def send_to_admin(app: Application, repo_id: int, repo: dict, post_text: s
     header = post_text
 
     screenshots = repo.get("screenshots", [])
+
+    def _download(url):
+        import requests as req
+        try:
+            r = req.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+            r.raise_for_status()
+            return r.content
+        except Exception:
+            return None
+
     if screenshots:
         try:
             from telegram import InputMediaPhoto
-            if len(screenshots) == 1:
+            import io
+            photos = []
+            for url in screenshots[:5]:
+                data = _download(url)
+                if data:
+                    photos.append(io.BytesIO(data))
+            if len(photos) == 1:
                 msg = await app.bot.send_photo(
                     chat_id=config.ADMIN_ID,
-                    photo=screenshots[0],
+                    photo=photos[0],
                     caption=header,
                     parse_mode=ParseMode.HTML,
                     reply_markup=approval_keyboard(repo_id),
                 )
-            else:
-                # Отправляем альбом — первое фото с caption
-                media = [InputMediaPhoto(media=screenshots[0], caption=header, parse_mode=ParseMode.HTML)]
-                for url in screenshots[1:]:
-                    media.append(InputMediaPhoto(media=url))
+            elif len(photos) > 1:
+                media = [InputMediaPhoto(media=photos[0], caption=header, parse_mode=ParseMode.HTML)]
+                for p in photos[1:]:
+                    media.append(InputMediaPhoto(media=p))
                 await app.bot.send_media_group(chat_id=config.ADMIN_ID, media=media)
-                # Кнопки отдельным сообщением
                 msg = await app.bot.send_message(
                     chat_id=config.ADMIN_ID,
                     text="👆 Выберите действие:",
                     reply_markup=approval_keyboard(repo_id),
                 )
+            else:
+                raise Exception("Нет загруженных фото")
         except Exception as e:
             logger.warning(f"Не удалось отправить фото: {e}")
             msg = await app.bot.send_message(
@@ -255,18 +271,29 @@ async def publish_repo(context: ContextTypes.DEFAULT_TYPE, repo_id: int, repo: d
     if screenshots:
         try:
             from telegram import InputMediaPhoto
-            if len(screenshots) == 1:
+            import io, requests as req
+            photos = []
+            for url in screenshots:
+                try:
+                    r = req.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+                    r.raise_for_status()
+                    photos.append(io.BytesIO(r.content))
+                except Exception:
+                    pass
+            if len(photos) == 1:
                 await context.bot.send_photo(
                     chat_id=config.CHANNEL_ID,
-                    photo=screenshots[0],
+                    photo=photos[0],
                     caption=post_text,
                     parse_mode=ParseMode.HTML,
                 )
-            else:
-                media = [InputMediaPhoto(media=screenshots[0], caption=post_text, parse_mode=ParseMode.HTML)]
-                for url in screenshots[1:]:
-                    media.append(InputMediaPhoto(media=url))
+            elif len(photos) > 1:
+                media = [InputMediaPhoto(media=photos[0], caption=post_text, parse_mode=ParseMode.HTML)]
+                for p in photos[1:]:
+                    media.append(InputMediaPhoto(media=p))
                 await context.bot.send_media_group(chat_id=config.CHANNEL_ID, media=media)
+            else:
+                raise Exception("Нет фото")
         except Exception as e:
             logger.warning(f"Не удалось отправить фото при публикации: {e}")
             await context.bot.send_message(
